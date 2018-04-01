@@ -1,0 +1,85 @@
+find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin) # Get full path to plugin
+
+function(PROTOBUF_GENERATE_GRPC_CPP SRCS HDRS)
+  if(NOT ARGN)
+    message(SEND_ERROR "Error: PROTOBUF_GENERATE_GRPC_CPP() called without any proto files")
+    return()
+  endif()
+
+  if(PROTOBUF_GENERATE_CPP_APPEND_PATH) # This variable is common for all types of output.
+    # Create an include path for each file specified
+    foreach(FIL ${ARGN})
+      get_filename_component(ABS_FIL ${FIL} ABSOLUTE)
+      get_filename_component(ABS_PATH ${ABS_FIL} PATH)
+      list(FIND _protobuf_include_path ${ABS_PATH} _contains_already)
+      if(${_contains_already} EQUAL -1)
+          list(APPEND _protobuf_include_path -I ${ABS_PATH})
+      endif()
+    endforeach()
+  else()
+    set(_protobuf_include_path -I ${CMAKE_CURRENT_SOURCE_DIR})
+  endif()
+
+  # _protobuf_include_path is argument starts with "-I"
+
+  if(DEFINED PROTOBUF_IMPORT_DIRS)
+    foreach(DIR ${Protobuf_IMPORT_DIRS})
+      get_filename_component(ABS_PATH ${DIR} ABSOLUTE)
+      list(FIND _protobuf_include_path ${ABS_PATH} _contains_already)
+      if(${_contains_already} EQUAL -1)
+          list(APPEND _protobuf_include_path -I ${ABS_PATH})
+      endif()
+    endforeach()
+  endif()
+
+  message("command: " ${Protobuf_PROTOC_EXECUTABLE} --grpc_out=${CMAKE_CURRENT_BINARY_DIR} --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN} ${_protobuf_include_path} ${ABS_FIL})
+
+  set(${SRCS}) # clear
+  set(${HDRS})
+  foreach(FIL ${ARGN})
+    get_filename_component(ABS_FIL ${FIL} ABSOLUTE) # Abs path(including name)
+    get_filename_component(FIL_WE ${FIL} NAME_WE) # File name
+
+    list(APPEND ${SRCS} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.grpc.pb.cc")
+    list(APPEND ${HDRS} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.grpc.pb.h")
+
+    add_custom_command(
+      OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.grpc.pb.cc"
+             "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.grpc.pb.h"
+      COMMAND  protoc
+      ARGS --grpc_out=${CMAKE_CURRENT_BINARY_DIR}
+           --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN}
+           ${_protobuf_include_path} ${ABS_FIL}
+      DEPENDS ${ABS_FIL} 
+      COMMENT "Running gRPC C++ protocol buffer compiler on ${FIL}"
+      VERBATIM)
+  endforeach()
+
+  set_source_files_properties(${${SRCS}} ${${HDRS}} PROPERTIES GENERATED TRUE)
+  set(${SRCS} ${${SRCS}} PARENT_SCOPE)
+  set(${HDRS} ${${HDRS}} PARENT_SCOPE)
+endfunction()
+
+# You can use it as follows:
+
+# PROJECT(protos)
+# SET(CMAKE_CXX_COMPILER /usr/bin/g++-7 CACHE PATH "" FORCE)
+# SET(CMAKE_CXX_FLAGS_DEBUG "-w -Wno-unused-variable -Wno-unused-but-set-variable -DPOSIX -g -O0 -fpermissive -fPIC -std=c++1z")
+
+# find_package(Protobuf REQUIRED)
+# include(cmake_grpc_cpp.cmake)
+
+# FILE(GLOB protofiles "${CMAKE_CURRENT_SOURCE_DIR}/*.proto")
+
+# PROTOBUF_GENERATE_CPP(CLISRC CLIH ${protofiles})
+# MESSAGE(STATUS "CLI SRC " ${CLISRC} ", CLI HEAD " ${CLIH})
+# add_library(proto_cli STATIC ${CLISRC} ${CLIH}) 
+# target_link_libraries(proto_cli protobuf) 
+# target_include_directories(proto_cli PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+
+
+# PROTOBUF_GENERATE_GRPC_CPP(SVRSRC SVRH ${protofiles})
+# MESSAGE(STATUS "SVR SRC " ${SVRSRC} ", SVR HEAD " ${SVRH})
+# add_library(proto_svr STATIC ${SVRSRC} ${SVRH} ${CLIH}) 
+# target_link_libraries(proto_svr protobuf) 
+# target_include_directories(proto_svr PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
